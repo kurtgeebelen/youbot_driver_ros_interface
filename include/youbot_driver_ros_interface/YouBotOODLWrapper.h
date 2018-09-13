@@ -108,7 +108,7 @@ public:
      * @param armName Name of the base. Used to open the configuration file e.g. youbot-manipulator.cfg
      * @param enableStandardGripper If set to true, then the default gripper of the youBot will be initialized.
      */
-    void initializeArm(std::string armName, bool enableStandardGripper = true);
+    void initializeArm(std::string armName, bool enableStandardGripper = false);
 
     /**
      * @brief Stops all initialized elements.
@@ -126,10 +126,16 @@ public:
     void baseCommandCallback(const geometry_msgs::Twist& youbotBaseCommand);
 
     /**
+     * @brief Callback that is executed when a commend for the base comes in.
+     * @param youbotBaseCommand Message that contains the desired translational and rotatio$
+     */
+    void kalmanPositionCallback(const nav_msgs::Odometry::ConstPtr& msg);
+
+
+    /**
      * @deprecated
      * @brief Callback that is executed when a commend for the arm comes in.
-     * @param youbotArmCommand Message that contains the desired joint configuration.
-     *
+     * @param youbotArmCommand Message that contains the desired joint configuration     *
      * Currently only the first configuration (JointTrajectoryPoint) per message is processed.
      * Velocity and acceleration values are ignored.
      */

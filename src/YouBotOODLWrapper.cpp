@@ -1,3 +1,4 @@
+
 /******************************************************************************
  * Copyright (c) 2011
  * Locomotec
@@ -39,13 +40,17 @@
 
 #include "youbot_driver_ros_interface/YouBotOODLWrapper.h"
 #include "youbot_driver_ros_interface/joint_state_observer_oodl.h"
-
 #include <youbot_trajectory_action_server/joint_trajectory_action.h>
 #include <sstream>
 
+#include "ros/ros.h"
+#include "nav_msgs/Odometry.h"
+
+#include <geometry_msgs/Twist.h>
+#include <geometry_msgs/Pose.h>
+
 namespace youBot
 {
-
 YouBotOODLWrapper::YouBotOODLWrapper()
 {
 }
@@ -99,6 +104,8 @@ void YouBotOODLWrapper::initializeBase(std::string baseName)
 
     /* setup input/output communication */
     youBotConfiguration.baseConfiguration.baseCommandSubscriber = node.subscribe("cmd_vel", 1000, &YouBotOODLWrapper::baseCommandCallback, this);
+    youBotConfiguration.baseConfiguration.kalmanPositionSubscriber = node.subscribe("youbot_position", 1000, &YouBotOODLWrapper::kalmanPositionCallback, this); /*Joram*/
+
     youBotConfiguration.baseConfiguration.baseOdometryPublisher = node.advertise<nav_msgs::Odometry > ("odom", 1);
     youBotConfiguration.baseConfiguration.baseJointStatePublisher = node.advertise<sensor_msgs::JointState > ("base/joint_states", 1);
 
@@ -113,6 +120,9 @@ void YouBotOODLWrapper::initializeBase(std::string baseName)
     ROS_INFO("Base is initialized.");
     youBotConfiguration.hasBase = true;
     areBaseMotorsSwitchedOn = true;
+
+    youBotConfiguration.qwtest = 1;
+
 }
 
 void YouBotOODLWrapper::initializeArm(std::string armName, bool enableStandardGripper)
@@ -290,6 +300,7 @@ void YouBotOODLWrapper::stop()
     youBotConfiguration.baseConfiguration.baseOdometryPublisher.shutdown();
     youBotConfiguration.baseConfiguration.switchONMotorsService.shutdown();
     youBotConfiguration.baseConfiguration.switchOffMotorsService.shutdown();
+    youBotConfiguration.baseConfiguration.kalmanPositionSubscriber.shutdown(); /* Joram */
     // youBotConfiguration.baseConfiguration.odometryBroadcaster.
     youBotConfiguration.hasBase = false;
     areBaseMotorsSwitchedOn = false;
@@ -318,6 +329,37 @@ void YouBotOODLWrapper::stop()
     armJointStateMessages.clear();
 
     youbot::EthercatMaster::destroy();
+}
+
+void YouBotOODLWrapper::kalmanPositionCallback(const nav_msgs::Odometry::ConstPtr& msg)
+{
+    if (youBotConfiguration.hasBase)
+    { // in case stop has been invoked
+        try
+        {
+            youBotConfiguration.xtest = msg->pose.pose.position.x;
+            youBotConfiguration.ytest = msg->pose.pose.position.y;
+            youBotConfiguration.qxtest = msg->pose.pose.orientation.x;
+            youBotConfiguration.qytest = msg->pose.pose.orientation.y;
+            youBotConfiguration.qztest = msg->pose.pose.orientation.z;
+            youBotConfiguration.qwtest = msg->pose.pose.orientation.w;
+
+            //ROS_INFO("Position-> x: [%f], y: [%f]", youBotConfiguration.xtest, youBotConfiguration.ytest);
+
+            //ROS_INFO("Position-> x: [%f], y: [%f], z: [%f]", msg->pose.pose.position.x,msg->pose.pose.position.y, msg->pose.pose.position.z);
+            //ROS_INFO("Orientation-> x: [%f], y: [%f], z: [%f], w: [%f]", msg->pose.pose.orientation.x, msg->pose.pose.orientation.y, msg->pose.pose.orientation.z, msg->pose.pose.orientation.w);
+        }
+        catch (std::exception& e)
+        {
+            std::string errorMessage = e.what();
+            ROS_WARN("Cannot get Kalman Position. Did you launch the Kalman-filter?: %s", errorMessage.c_str());
+        }
+
+    }
+    else
+    {
+        ROS_ERROR("No base initialized!");
+    }
 }
 
 void YouBotOODLWrapper::baseCommandCallback(const geometry_msgs::Twist& youbotBaseCommand)
@@ -705,6 +747,7 @@ void YouBotOODLWrapper::computeOODLSensorReadings()
 
     if (youBotConfiguration.hasBase == true)
     {
+
         double x = 0.0;
         double y = 0.0;
         double theta = 0.0;
@@ -722,6 +765,7 @@ void YouBotOODLWrapper::computeOODLSensorReadings()
         quantity<si::angular_velocity> angularVelocity;
 
         youBotConfiguration.baseConfiguration.youBotBase->getBasePosition(longitudinalPosition, transversalPosition, orientation);
+
         x = longitudinalPosition.value();
         y = transversalPosition.value();
         theta = orientation.value();
@@ -740,10 +784,19 @@ void YouBotOODLWrapper::computeOODLSensorReadings()
         odometryTransform.header.frame_id = youBotOdometryFrameID;
         odometryTransform.child_frame_id = youBotOdometryChildFrameID;
 
-        odometryTransform.transform.translation.x = x;
-        odometryTransform.transform.translation.y = y;
+        odometryTransform.transform.translation.x = youBotConfiguration.xtest;
+        odometryTransform.transform.translation.y = youBotConfiguration.ytest;
         odometryTransform.transform.translation.z = 0.0;
-        odometryTransform.transform.rotation = odometryQuaternion;
+        odometryTransform.transform.rotation.x = youBotConfiguration.qxtest;
+        odometryTransform.transform.rotation.y = youBotConfiguration.qytest;
+        odometryTransform.transform.rotation.z = youBotConfiguration.qztest;
+        odometryTransform.transform.rotation.w = youBotConfiguration.qwtest;
+
+
+//        odometryTransform.transform.translation.x = x;
+//        odometryTransform.transform.translation.y = y;
+//        odometryTransform.transform.translation.z = 0.0;
+//        odometryTransform.transform.rotation = odometryQuaternion;
 
         /* Setup odometry Message */
         odometryMessage.header.stamp = currentTime;
@@ -754,11 +807,25 @@ void YouBotOODLWrapper::computeOODLSensorReadings()
         odometryMessage.pose.pose.position.z = 0.0;
         odometryMessage.pose.pose.orientation = odometryQuaternion;
 
+        /* odometryMessage.pose.covariance[0+0*6] = 0.01;
+        odometryMessage.pose.covariance[1+1*6] = 0.01;
+        odometryMessage.pose.covariance[2+2*6] = 0.01;
+        odometryMessage.pose.covariance[3+3*6] = 0.01;
+        odometryMessage.pose.covariance[4+4*6] = 0.01;
+        odometryMessage.pose.covariance[5+5*6] = 0.01;*/
+
         odometryMessage.child_frame_id = youBotOdometryChildFrameID;
         //        odometryMessage.child_frame_id = youBotOdometryFrameID;
         odometryMessage.twist.twist.linear.x = vx;
         odometryMessage.twist.twist.linear.y = vy;
         odometryMessage.twist.twist.angular.z = vtheta;
+
+        /*odometryMessage.twist.covariance[0+0*6] = 0.01;
+        odometryMessage.twist.covariance[1+1*6] = 0.01;
+        odometryMessage.twist.covariance[2+2*6] = 0.01;
+        odometryMessage.twist.covariance[3+3*6] = 0.01;
+        odometryMessage.twist.covariance[4+4*6] = 0.01;
+        odometryMessage.twist.covariance[5+5*6] = 0.01;*/
 
         /* Set up joint state message for the wheels */
         baseJointStateMessage.header.stamp = currentTime;
@@ -883,7 +950,7 @@ void YouBotOODLWrapper::computeOODLSensorReadings()
             catch (std::exception& e)
             {
                 std::string errorMessage = e.what();
-                ROS_WARN("Cannot read gripper values: %s", errorMessage.c_str());
+                //ROS_WARN("Cannot read gripper values: %s", errorMessage.c_str()); //Joram
             }
 /*
             if (trajectoryActionServerEnable)

@@ -77,14 +77,13 @@ public:
     /// Joint names for the wheels
     std::vector<std::string> wheelNames;
 
-
     /// Receives Twist messages for the base.
     ros::Subscriber baseCommandSubscriber;
 
+    ros::Subscriber kalmanPositionSubscriber;
 
     /// Publishes Odometry messages
     ros::Publisher baseOdometryPublisher;
-
     /// Publishes JointState messages with angles/velocities for the wheels.
     ros::Publisher baseJointStatePublisher;
 
@@ -176,6 +175,14 @@ public:
 class YouBotConfiguration
 {
 public:
+
+    double xtest;
+    double ytest;
+    double qxtest;
+    double qytest;
+    double qztest;
+    double qwtest;
+   
     YouBotConfiguration();
     virtual ~YouBotConfiguration();
 
